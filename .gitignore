@@ -3,3 +3,7 @@
 
 # Ignore the build folder
 build/
+
+# Ignore the compile commands & Clang stuff
+compile_commands.json
+.clang-format
