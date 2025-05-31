@@ -1,7 +1,0 @@
-[
-{
-    "directory": "C:/Handmade",
-    "command": "cl /EHsc -c C:/Handmade/src/Main.cpp",
-    "file": "C:/Handmade/src/Main.cpp"
-}
-]
