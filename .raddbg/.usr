@@ -1,4 +1,4 @@
-// raddbg 0.9.18 user file
+// raddbg 0.9.19 user file
 
 recent_project: path: "../../Users/samhe/AppData/Roaming/raddbg/default.raddbg_user/default.raddbg_project"
 file_path_map:
@@ -8,7 +8,7 @@ file_path_map:
 }
 window:
 {
-  size: 3072.000000 1728.000000
+  size: 1942 1102
   panels:
   {
     0.678198:
@@ -89,9 +89,9 @@ window:
     }
   }
   split_x
-  pos: 384 216
+  pos: -11 -11
   monitor: "\\\\.\\DISPLAY1"
-  font_size: 14
+  font_size: 12
   use_project_theme: 1
   smooth_code_text: 0
   maximized
