@@ -5,7 +5,7 @@ rem ============================================================================
 
 rem === SET UP PROJECT VARIABLES ===
 setlocal enabledelayedexpansion
-set "EXE_NAME=GameProject.exe"
+set "EXE_NAME=Game.exe"
 set "PROJECT_ROOT=%~dp0"
 set "BUILD_DIR=%PROJECT_ROOT%build"
 set "SRC_DIR=%PROJECT_ROOT%src"
