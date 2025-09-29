@@ -51,7 +51,7 @@ echo Generating compile_commands.json...
         if "!first!"=="0" echo ,
         echo {
         echo     "directory": "!PROJECT_PATH!",
-        echo     "command": "cl /EHsc -c !FILE!",
+        echo     "command": "cl /EHsc /std:c++17 -c !FILE!",
         echo     "file": "!FILE!"
         echo }
         set first=0
