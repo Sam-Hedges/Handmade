@@ -23,7 +23,7 @@ rem === COMPILING SOURCES ===
 pushd %BUILD_DIR%
 if /I "%COMPILE_MODE%"=="DEBUG" (
     echo Compiling for DEBUG...
-    cl /Zi /FC /Od /EHsc %SRC_DIR%\*.cpp /Fe%EXE_NAME% /link User32.lib Gdi32.lib
+    cl /W4 /Zi /FC /Od /EHsc %SRC_DIR%\*.cpp /Fe%EXE_NAME% /link User32.lib Gdi32.lib
 ) else if /I "%COMPILE_MODE%"=="RELEASE" (
     echo Compiling for RELEASE...
     cl /O2 /EHsc %SRC_DIR%\*.cpp /Fe%EXE_NAME% /link User32.lib Gdi32.lib
