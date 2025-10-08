@@ -1,12 +1,30 @@
-#include <cstdint>
 #include <iostream>
 #include <windows.h>
 
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance,
                      LPSTR CommandLine, int ShowCode) {
 
-    char *Foo = "This is a string!";
     OutputDebugStringA("Hello World!\n");
+
+    /*
+    char SmallS;
+    char unsigned SmallU;
+
+    short MediumS;
+    short unsigned MediumU;
+
+    int LargeS;
+    int unsigned LargeU;
+    */
+
+    char unsigned Test;
+    char unsigned *TestPointer;
+
+    TestPointer = &Test;
+
+    Test = 255;
+    Test = Test + 1;
+
     return 0;
 }
 
