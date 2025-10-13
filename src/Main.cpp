@@ -1,6 +1,13 @@
 #include <iostream>
 #include <windows.h>
 
+struct projectile {
+    int Damage;
+    short Size;
+    char Speed;
+    char Distance;
+};
+
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance,
                      LPSTR CommandLine, int ShowCode) {
 
@@ -17,13 +24,16 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance,
     int unsigned LargeU;
     */
 
-    char unsigned Test;
-    char unsigned *TestPointer;
+    projectile Test;
 
-    TestPointer = &Test;
+    Test.Damage = 1;
+    Test.Distance = 2;
+    Test.Size = 3;
+    Test.Speed = 4;
 
-    Test = 255;
-    Test = Test + 1;
+    projectile Projectiles[40];
+
+    projectile *ProjectilePointer = Projectiles;
 
     return 0;
 }
