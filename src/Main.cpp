@@ -1,26 +1,77 @@
 #include <iostream>
 #include <windows.h>
 
+#define internal static
+#define local_persist static
+#define global_var static
+
+// TODO(Sam): This is a global for now.
+global_var bool Running;
+
+global_var BITMAPINFO BitmapInfo;
+global_var void *BitmapMemory;
+global_var HBITMAP BitmapHandle;
+global_var HDC BitmapDeviceContext;
+
+// Device Independent Bitmap
+internal void ResizeDIBSection(int Width, int Height)
+{
+	// TODO(Sam): Bulletproof this.
+	// Maybe don't free first, free after, then free first if that fails.
+
+	if(BitmapHandle)
+	{
+		DeleteObject(BitmapHandle);
+	}
+
+	if(!BitmapDeviceContext)
+	{
+		// TODO(Sam): Should we recreate these under certain special circumstances.
+		BitmapDeviceContext = CreateCompatibleDC(0);
+	}
+
+	BitmapInfo.bmiHeader.biSize		   = sizeof(BitmapInfo.bmiHeader);
+	BitmapInfo.bmiHeader.biWidth	   = Width;
+	BitmapInfo.bmiHeader.biHeight	   = Height;
+	BitmapInfo.bmiHeader.biPlanes	   = 1;
+	BitmapInfo.bmiHeader.biBitCount	   = 32;
+	BitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+	BitmapHandle =
+		CreateDIBSection(BitmapDeviceContext, &BitmapInfo, DIB_RGB_COLORS, &BitmapMemory, 0, 0);
+}
+
+internal void BlitWindow(HDC DeviceContext, int X, int Y, int Width, int Height)
+{
+	StretchDIBits(DeviceContext, X, Y, Width, Height, X, Y, Width, Height, BitmapMemory,
+				  &BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+}
+
 LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 {
-
 	LRESULT Result = 0;
 
 	switch(Message)
 	{
 		case WM_SIZE:
 		{
-			OutputDebugStringA("WM_SIZE\n");
+			RECT ClientRect;
+			GetClientRect(Window, &ClientRect);
+			int Width  = ClientRect.right - ClientRect.left;
+			int Height = ClientRect.bottom - ClientRect.top;
+			ResizeDIBSection(Width, Height);
 		}
 		break;
 		case WM_DESTROY:
 		{
-			OutputDebugStringA("WM_DESTROY\n");
+			// TODO(Sam): Handle this as an error, recreate window?
+			Running = false;
 		}
 		break;
 		case WM_CLOSE:
 		{
-			OutputDebugStringA("WM_CLOSE\n");
+			// TODO(Sam): Handle this with a message to the user?
+			Running = false;
 		}
 		break;
 		case WM_ACTIVATEAPP:
@@ -31,14 +82,12 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_PAINT:
 		{
 			PAINTSTRUCT Paint;
-			HDC DeviceContext	= BeginPaint(Window, &Paint);
-			int X				= Paint.rcPaint.left;
-			int Y				= Paint.rcPaint.top;
-			int Width			= Paint.rcPaint.right - Paint.rcPaint.left;
-			int Height			= Paint.rcPaint.bottom - Paint.rcPaint.top;
-			static DWORD Colour = WHITENESS;
-			PatBlt(DeviceContext, X, Y, Width, Height, Colour);
-			Colour = ~Colour;
+			HDC DeviceContext = BeginPaint(Window, &Paint);
+			int X			  = Paint.rcPaint.left;
+			int Y			  = Paint.rcPaint.top;
+			int Width		  = Paint.rcPaint.right - Paint.rcPaint.left;
+			int Height		  = Paint.rcPaint.bottom - Paint.rcPaint.top;
+			BlitWindow(DeviceContext, X, Y, Width, Height);
 			EndPaint(Window, &Paint);
 		}
 		break;
@@ -75,9 +124,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 		if(WindowHandle)
 		{
-			MSG Message;
-			for(;;)
+			Running = true;
+			while(Running)
 			{
+				MSG Message;
 				BOOL MessageResult = GetMessageA(&Message, 0, 0, 0);
 				if(MessageResult > 0)
 				{
