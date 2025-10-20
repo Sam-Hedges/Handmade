@@ -16,25 +16,45 @@ typedef int64_t int64;
 #define local_persist static
 #define global_var static
 
+struct bitmap_buffer
+{
+	BITMAPINFO Info;
+	void *Memory;
+	int Width;
+	int Height;
+	int Pitch;
+	int BytesPerPixel;
+};
+
 // TODO(Sam): This is a global for now.
 global_var bool Running;
+global_var bitmap_buffer GlobalBackBuffer;
 
-global_var BITMAPINFO BitmapInfo;
-global_var void *BitmapMemory;
-
-// TODO(Sam): Remove these at some point.
-global_var int BitmapWidth;
-global_var int BitmapHeight;
-global_var int BytesPerPixel = 4;
-
-internal void RenderGradientUV(int XOffset, int YOffset)
+struct window_dimension
 {
-	int Pitch  = BitmapWidth * BytesPerPixel;
-	uint8 *Row = (uint8 *)BitmapMemory;
-	for(int Y = 0; Y < BitmapHeight; ++Y)
+	int Width;
+	int Height;
+};
+
+window_dimension GetWindowDimension(HWND Window)
+{
+	window_dimension Result;
+
+	RECT ClientRect;
+	GetClientRect(Window, &ClientRect);
+	Result.Width  = ClientRect.right - ClientRect.left;
+	Result.Height = ClientRect.bottom - ClientRect.top;
+
+	return Result;
+}
+
+internal void RenderGradientUV(bitmap_buffer Buffer, int XOffset, int YOffset)
+{
+	uint8 *Row = (uint8 *)Buffer.Memory;
+	for(int Y = 0; Y < Buffer.Height; ++Y)
 	{
 		uint32 *Pixel = (uint32 *)Row;
-		for(int X = 0; X < BitmapWidth; ++X)
+		for(int X = 0; X < Buffer.Width; ++X)
 		{
 			// The reason we get a checkerbox is because by casting to an unsigned 8 bit integer /
 			// char we are capping the maximum value to 255. This means that the current row /
@@ -49,47 +69,45 @@ internal void RenderGradientUV(int XOffset, int YOffset)
 			// interprets this byte as the alpha and make the bitmap view not display any pixels
 		}
 
-		Row += Pitch;
+		Row += Buffer.Pitch;
 	}
 }
 
 // Device Independent Bitmap
-internal void ResizeDIBSection(int Width, int Height)
+internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 {
 	// TODO(Sam): Bulletproof this.
 	// Maybe don't free first, free after, then free first if that fails.
 
-	if(BitmapMemory)
+	if(Buffer->Memory)
 	{
-		VirtualFree(BitmapMemory, 0, MEM_RELEASE);
+		VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
 	}
 
-	BitmapWidth	 = Width;
-	BitmapHeight = Height;
+	Buffer->Width						 = Width;
+	Buffer->Height						 = Height;
+	Buffer->BytesPerPixel				 = 4;
+	Buffer->Info.bmiHeader.biSize		 = sizeof(Buffer->Info.bmiHeader);
+	Buffer->Info.bmiHeader.biWidth		 = Buffer->Width;
+	Buffer->Info.bmiHeader.biHeight		 = -Buffer->Height;
+	Buffer->Info.bmiHeader.biPlanes		 = 1;
+	Buffer->Info.bmiHeader.biBitCount	 = 32;
+	Buffer->Info.bmiHeader.biCompression = BI_RGB;
 
-	BitmapInfo.bmiHeader.biSize		   = sizeof(BitmapInfo.bmiHeader);
-	BitmapInfo.bmiHeader.biWidth	   = BitmapWidth;
-	BitmapInfo.bmiHeader.biHeight	   = -BitmapHeight;
-	BitmapInfo.bmiHeader.biPlanes	   = 1;
-	BitmapInfo.bmiHeader.biBitCount	   = 32;
-	BitmapInfo.bmiHeader.biCompression = BI_RGB;
+	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel;
+	Buffer->Memory		 = VirtualAlloc(0, BitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 
-	int BitmapMemorySize = (BitmapWidth * BitmapHeight) * BytesPerPixel;
-	BitmapMemory		 = VirtualAlloc(0, BitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+	Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
 
 	// TODO(Sam): Probably want to clear this to black.
 }
 
-internal void BlitWindow(HDC DeviceContext, RECT *ClientRect, int X, int Y, int Width, int Height)
+internal void BlitBufferToWindow(bitmap_buffer Buffer, HDC DeviceContext, int ClientWidth,
+								 int ClientHeight, int X, int Y, int Width, int Height)
 {
-	// StretchDIBits(DeviceContext, X, Y, Width, Height, X, Y, Width, Height, BitmapMemory,
-	// 			  &BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
-
-	int ClientWidth	 = ClientRect->right - ClientRect->left;
-	int ClientHeight = ClientRect->bottom - ClientRect->top;
-
-	StretchDIBits(DeviceContext, X, Y, BitmapWidth, BitmapHeight, X, Y, ClientWidth, ClientHeight,
-				  BitmapMemory, &BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+	// TODO(Sam): Aspect Ratio Correction.
+	StretchDIBits(DeviceContext, X, Y, ClientWidth, ClientHeight, X, Y, Buffer.Width, Buffer.Height,
+				  Buffer.Memory, &Buffer.Info, DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
@@ -100,15 +118,6 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 	{
 		case WM_SIZE:
 		{
-			RECT ClientRect;
-			GetClientRect(Window, &ClientRect);
-			int Width  = ClientRect.right - ClientRect.left;
-			int Height = ClientRect.bottom - ClientRect.top;
-			ResizeDIBSection(Width, Height);
-
-			// HDC DeviceContext = GetDC(Window);
-			// BlitWindow(DeviceContext, &ClientRect, 0, 0, Width, Height);
-			// ReleaseDC(Window, DeviceContext);
 		}
 		break;
 		case WM_DESTROY:
@@ -131,14 +140,14 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_PAINT:
 		{
 			PAINTSTRUCT Paint;
-			HDC DeviceContext = BeginPaint(Window, &Paint);
-			int X			  = Paint.rcPaint.left;
-			int Y			  = Paint.rcPaint.top;
-			int Width		  = Paint.rcPaint.right - Paint.rcPaint.left;
-			int Height		  = Paint.rcPaint.bottom - Paint.rcPaint.top;
-			RECT ClientRect;
-			GetClientRect(Window, &ClientRect);
-			BlitWindow(DeviceContext, &ClientRect, X, Y, Width, Height);
+			HDC DeviceContext		   = BeginPaint(Window, &Paint);
+			int X					   = Paint.rcPaint.left;
+			int Y					   = Paint.rcPaint.top;
+			int Width				   = Paint.rcPaint.right - Paint.rcPaint.left;
+			int Height				   = Paint.rcPaint.bottom - Paint.rcPaint.top;
+			window_dimension Dimension = GetWindowDimension(Window);
+			BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height,
+							   X, Y, Width, Height);
 			EndPaint(Window, &Paint);
 		}
 		break;
@@ -157,11 +166,11 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 // The CALLBACK and WinMain signature are required by the Windows API for GUI apps.
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
-
 	WNDCLASS WindowClass = {};
 
-	// TODO(Sam): Check if OWNDC, HREDRAW and VREDRAW still matter
-	WindowClass.style		  = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+	ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
+
+	WindowClass.style		  = CS_HREDRAW | CS_VREDRAW;
 	WindowClass.lpfnWndProc	  = MainWindowCallback; // Handles messages
 	WindowClass.hInstance	  = Instance;
 	WindowClass.lpszClassName = "HandmadeGameWindowClass";
@@ -192,13 +201,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 					DispatchMessageA(&Message);
 				}
 
-				RenderGradientUV(XOffset, YOffset);
-				HDC DeviceContext = GetDC(Window);
-				RECT ClientRect;
-				GetClientRect(Window, &ClientRect);
-				int ClientWidth	 = ClientRect.right - ClientRect.left;
-				int ClientHeight = ClientRect.bottom - ClientRect.top;
-				BlitWindow(DeviceContext, &ClientRect, 0, 0, ClientWidth, ClientHeight);
+				RenderGradientUV(GlobalBackBuffer, XOffset, YOffset);
+
+				HDC DeviceContext		   = GetDC(Window);
+				window_dimension Dimension = GetWindowDimension(Window);
+				BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width,
+								   Dimension.Height, 0, 0, Dimension.Width, Dimension.Height);
 				ReleaseDC(Window, DeviceContext);
 				++XOffset;
 				--YOffset;
