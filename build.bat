@@ -20,22 +20,22 @@ echo Making new build folder...
 mkdir "%BUILD_DIR%"
 
 rem === COMPILING SOURCES ===
-rem /W4     Enables high warning verbosity [0–4] messages when compiling.
-rem /Zi     Generate complete debugging information (PDB File).
-rem /FC     Shows full file paths in compiler error/warning messages instead of just filenames.
-rem /Od     Disable optimizations, easier to debug and avoids compiler fiddling with variables.
-rem /EHsc   Tells the compiler to assume exceptions only come from C++ throw.
-rem /MDd    Use debug multithreaded DLL runtime, fill heap memory with patterns like 0xCC.
-rem /RTC1   Enable basic runtime checks, helps detect stack corruption and use of uninitialized locals.
-rem /GS     Enable buffer security checks, helps detect stack corruption and use of uninitialized locals.
-rem /O2     Is shorthand for enabling a group of specific optimization flags. Look them up.
+rem W4     Enables high warning verbosity [0–4] messages when compiling.
+rem Zi     Generate complete debugging information (PDB File).
+rem FC     Shows full file paths in compiler error/warning messages instead of just filenames.
+rem Od     Disable optimizations, easier to debug and avoids compiler fiddling with variables.
+rem EHsc   Tells the compiler to assume exceptions only come from C++ throw.
+rem MDd    Use debug multithreaded DLL runtime, fill heap memory with patterns like 0xCC.
+rem RTC1   Enable basic runtime checks, helps detect stack corruption and use of uninitialized locals.
+rem GS     Enable buffer security checks, helps detect stack corruption and use of uninitialized locals.
+rem O2     Is shorthand for enabling a group of specific optimization flags. Look them up.
 pushd %BUILD_DIR%
 if /I "%COMPILE_MODE%"=="DEBUG" (
     echo Compiling for DEBUG...
-    cl /W4 /Zi /FC /Od /EHsc /MDd /RTC1 /GS %SRC_DIR%\*.cpp /Fe%EXE_NAME% /link User32.lib Gdi32.lib
+    cl -W4 -Zi -FC -Od -EHsc -MDd -RTC1 -GS %SRC_DIR%\*.cpp -Fe%EXE_NAME% -link User32.lib Gdi32.lib
 ) else if /I "%COMPILE_MODE%"=="RELEASE" (
     echo Compiling for RELEASE...
-    cl /O2 /EHsc %SRC_DIR%\*.cpp /Fe%EXE_NAME% /link User32.lib Gdi32.lib
+    cl -O2 -EHsc %SRC_DIR%\*.cpp -Fe%EXE_NAME% -link User32.lib Gdi32.lib
 ) else (
     popd
     echo ERROR: Unknown COMPILE_MODE "%COMPILE_MODE%". Must be DEBUG or RELEASE.
