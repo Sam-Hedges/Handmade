@@ -18,16 +18,16 @@ typedef int64_t int64;
 
 struct bitmap_buffer
 {
+	// NOTE(Sam): Pixels are always 32-bits wide, Memory Order BB GG RR xx
 	BITMAPINFO Info;
 	void *Memory;
 	int Width;
 	int Height;
-	int Pitch;
-	int BytesPerPixel;
+	int Pitch; // How many bytes a pointer has to move in order to go from one row to the next row
 };
 
 // TODO(Sam): This is a global for now.
-global_var bool Running;
+global_var bool GlobalRunning;
 global_var bitmap_buffer GlobalBackBuffer;
 
 struct window_dimension
@@ -84,9 +84,13 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 		VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
 	}
 
-	Buffer->Width						 = Width;
-	Buffer->Height						 = Height;
-	Buffer->BytesPerPixel				 = 4;
+	Buffer->Width	  = Width;
+	Buffer->Height	  = Height;
+	int BytesPerPixel = 4;
+
+	// NOTE(Sam): When the biHeight field is negative, this is the clue to
+	// windows to treat this bitmap as top down and not bottom up, meaning that
+	// the first 3 bytes of the image are the top left pixel not the bottom left
 	Buffer->Info.bmiHeader.biSize		 = sizeof(Buffer->Info.bmiHeader);
 	Buffer->Info.bmiHeader.biWidth		 = Buffer->Width;
 	Buffer->Info.bmiHeader.biHeight		 = -Buffer->Height;
@@ -94,19 +98,20 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 	Buffer->Info.bmiHeader.biBitCount	 = 32;
 	Buffer->Info.bmiHeader.biCompression = BI_RGB;
 
-	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel;
+	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
 	Buffer->Memory		 = VirtualAlloc(0, BitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 
-	Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
+	Buffer->Pitch = Buffer->Width * BytesPerPixel;
 
 	// TODO(Sam): Probably want to clear this to black.
 }
 
 internal void BlitBufferToWindow(bitmap_buffer Buffer, HDC DeviceContext, int ClientWidth,
-								 int ClientHeight, int X, int Y, int Width, int Height)
+								 int ClientHeight)
 {
 	// TODO(Sam): Aspect Ratio Correction.
-	StretchDIBits(DeviceContext, X, Y, ClientWidth, ClientHeight, X, Y, Buffer.Width, Buffer.Height,
+	// TODO(Sam): Play with stretch modes.
+	StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight, 0, 0, Buffer.Width, Buffer.Height,
 				  Buffer.Memory, &Buffer.Info, DIB_RGB_COLORS, SRCCOPY);
 }
 
@@ -123,13 +128,13 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_DESTROY:
 		{
 			// TODO(Sam): Handle this as an error, recreate window?
-			Running = false;
+			GlobalRunning = false;
 		}
 		break;
 		case WM_CLOSE:
 		{
 			// TODO(Sam): Handle this with a message to the user?
-			Running = false;
+			GlobalRunning = false;
 		}
 		break;
 		case WM_ACTIVATEAPP:
@@ -141,13 +146,8 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 		{
 			PAINTSTRUCT Paint;
 			HDC DeviceContext		   = BeginPaint(Window, &Paint);
-			int X					   = Paint.rcPaint.left;
-			int Y					   = Paint.rcPaint.top;
-			int Width				   = Paint.rcPaint.right - Paint.rcPaint.left;
-			int Height				   = Paint.rcPaint.bottom - Paint.rcPaint.top;
 			window_dimension Dimension = GetWindowDimension(Window);
-			BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height,
-							   X, Y, Width, Height);
+			BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height);
 			EndPaint(Window, &Paint);
 		}
 		break;
@@ -170,7 +170,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 	ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
 
-	WindowClass.style		  = CS_HREDRAW | CS_VREDRAW;
+	WindowClass.style		  = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	WindowClass.lpfnWndProc	  = MainWindowCallback; // Handles messages
 	WindowClass.hInstance	  = Instance;
 	WindowClass.lpszClassName = "HandmadeGameWindowClass";
@@ -184,17 +184,19 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 		if(Window)
 		{
+			HDC DeviceContext = GetDC(Window);
+
 			int XOffset = 0, YOffset = 0;
 
-			Running = true;
-			while(Running)
+			GlobalRunning = true;
+			while(GlobalRunning)
 			{
 				MSG Message;
 				while(PeekMessageA(&Message, 0, 0, 0, PM_REMOVE))
 				{
 					if(Message.message == WM_QUIT)
 					{
-						Running = false;
+						GlobalRunning = false;
 					}
 
 					TranslateMessage(&Message);
@@ -203,11 +205,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 				RenderGradientUV(GlobalBackBuffer, XOffset, YOffset);
 
-				HDC DeviceContext		   = GetDC(Window);
 				window_dimension Dimension = GetWindowDimension(Window);
 				BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width,
-								   Dimension.Height, 0, 0, Dimension.Width, Dimension.Height);
-				ReleaseDC(Window, DeviceContext);
+								   Dimension.Height);
 				++XOffset;
 				--YOffset;
 			}
