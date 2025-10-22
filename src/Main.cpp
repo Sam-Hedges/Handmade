@@ -1,6 +1,7 @@
-#include <iostream>
 #include <stdint.h>
+#include <stdio.h>
 #include <windows.h>
+#include <xinput.h>
 
 typedef uint8_t uint8;
 typedef uint16_t uint16;
@@ -29,6 +30,13 @@ struct bitmap_buffer
 // TODO(Sam): This is a global for now.
 global_var bool GlobalRunning;
 global_var bitmap_buffer GlobalBackBuffer;
+
+typedef DWORD WINAPI x_input_get_state(DWORD dwUserIndex, XINPUT_STATE *pState);
+typedef DWORD WINAPI x_input_set_state(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration);
+global_var x_input_get_state *XInputGetState_;
+global_var x_input_set_state *XInputSetState_;
+#define XInputGetState XInputGetState_
+#define XInputSetState XInputSetState_
 
 struct window_dimension
 {
@@ -201,6 +209,47 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 					TranslateMessage(&Message);
 					DispatchMessageA(&Message);
+				}
+
+				// TODO(Sam): Should we poll this more frequently
+				for(DWORD ControllerIndex = 0; ControllerIndex < XUSER_MAX_COUNT; ControllerIndex++)
+				{
+					XINPUT_STATE ControllerState;
+					if(XInputGetState(ControllerIndex, &ControllerState) == ERROR_SUCCESS)
+					{
+						char Buffer[256];
+						_snprintf_s(Buffer, sizeof(Buffer), "Controller %u is connected\n",
+									ControllerIndex);
+						OutputDebugStringA(Buffer);
+
+						// NOTE(Sam): This controller is plugged in.
+						// TODO(Sam): See if ControllerState.dwPacketNumber increments too rapidly
+						XINPUT_GAMEPAD *Gamepad = &ControllerState.Gamepad;
+
+						bool DPadUp		   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+						bool DPadDown	   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+						bool DPadLeft	   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+						bool DPadRight	   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+						bool Start		   = (Gamepad->wButtons & XINPUT_GAMEPAD_START);
+						bool Back		   = (Gamepad->wButtons & XINPUT_GAMEPAD_BACK);
+						bool ShoulderLeft  = (Gamepad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+						bool ShoulderRight = (Gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+						bool AButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_A);
+						bool BButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_B);
+						bool XButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_X);
+						bool YButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_Y);
+
+						int16 StickLX = Gamepad->sThumbLX;
+						int16 StickLY = Gamepad->sThumbLY;
+					}
+					else
+					{
+						auto Result = XInputGetState(ControllerIndex, &ControllerState);
+						char Buffer[256];
+						_snprintf_s(Buffer, sizeof(Buffer), "Result: %lu\n", Result);
+						OutputDebugStringA(Buffer);
+						// NOTE(Sam): The controller is not available.
+					}
 				}
 
 				RenderGradientUV(GlobalBackBuffer, XOffset, YOffset);
