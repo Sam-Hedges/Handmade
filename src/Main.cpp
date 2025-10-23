@@ -27,24 +27,50 @@ struct bitmap_buffer
 	int Pitch; // How many bytes a pointer has to move in order to go from one row to the next row
 };
 
-// TODO(Sam): This is a global for now.
-global_var bool GlobalRunning;
-global_var bitmap_buffer GlobalBackBuffer;
-
-typedef DWORD WINAPI x_input_get_state(DWORD dwUserIndex, XINPUT_STATE *pState);
-typedef DWORD WINAPI x_input_set_state(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration);
-global_var x_input_get_state *XInputGetState_;
-global_var x_input_set_state *XInputSetState_;
-#define XInputGetState XInputGetState_
-#define XInputSetState XInputSetState_
-
 struct window_dimension
 {
 	int Width;
 	int Height;
 };
 
-window_dimension GetWindowDimension(HWND Window)
+// TODO(Sam): This is a global for now.
+global_var bool GlobalRunning;
+global_var bitmap_buffer GlobalBackBuffer;
+
+#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
+
+typedef X_INPUT_GET_STATE(x_input_get_state);
+typedef X_INPUT_SET_STATE(x_input_set_state);
+
+X_INPUT_GET_STATE(XInputGetStateStub) { return 0; }
+X_INPUT_SET_STATE(XInputSetStateStub) { return 0; }
+
+global_var x_input_get_state *XInputGetState_ = XInputGetStateStub;
+global_var x_input_set_state *XInputSetState_ = XInputSetStateStub;
+
+#define XInputGetState XInputGetState_
+#define XInputSetState XInputSetState_
+
+internal void LoadXInput(void)
+{
+	HMODULE XInputLibrary = LoadLibraryA("xinput1_4.dll");
+	if(!XInputLibrary)
+	{
+		XInputLibrary = LoadLibraryA("xinput1_3.dll");
+	}
+	if(!XInputLibrary)
+	{
+		XInputLibrary = LoadLibraryA("xinput9_1_0.dll");
+	}
+	if(XInputLibrary)
+	{
+		XInputGetState = (x_input_get_state *)GetProcAddress(XInputLibrary, "XInputGetState");
+		XInputSetState = (x_input_set_state *)GetProcAddress(XInputLibrary, "XInputSetState");
+	}
+}
+
+internal window_dimension GetWindowDimension(HWND Window)
 {
 	window_dimension Result;
 
@@ -174,6 +200,8 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 // The CALLBACK and WinMain signature are required by the Windows API for GUI apps.
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
+	LoadXInput();
+
 	WNDCLASS WindowClass = {};
 
 	ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
@@ -217,11 +245,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 					XINPUT_STATE ControllerState;
 					if(XInputGetState(ControllerIndex, &ControllerState) == ERROR_SUCCESS)
 					{
-						char Buffer[256];
-						_snprintf_s(Buffer, sizeof(Buffer), "Controller %u is connected\n",
-									ControllerIndex);
-						OutputDebugStringA(Buffer);
-
 						// NOTE(Sam): This controller is plugged in.
 						// TODO(Sam): See if ControllerState.dwPacketNumber increments too rapidly
 						XINPUT_GAMEPAD *Gamepad = &ControllerState.Gamepad;
@@ -241,13 +264,39 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 						int16 StickLX = Gamepad->sThumbLX;
 						int16 StickLY = Gamepad->sThumbLY;
+
+						if(DPadDown)
+						{
+							--YOffset;
+						}
+						if(DPadUp)
+						{
+							++YOffset;
+						}
+						if(DPadLeft)
+						{
+							++XOffset;
+						}
+						if(DPadRight)
+						{
+							--XOffset;
+						}
+
+						XINPUT_VIBRATION Vibration;
+						Vibration.wLeftMotorSpeed  = 0;
+						Vibration.wRightMotorSpeed = 0;
+						if(ShoulderLeft)
+						{
+							Vibration.wLeftMotorSpeed = 60000;
+						}
+						if(ShoulderRight)
+						{
+							Vibration.wRightMotorSpeed = 60000;
+						}
+						XInputSetState(0, &Vibration);
 					}
 					else
 					{
-						auto Result = XInputGetState(ControllerIndex, &ControllerState);
-						char Buffer[256];
-						_snprintf_s(Buffer, sizeof(Buffer), "Result: %lu\n", Result);
-						OutputDebugStringA(Buffer);
 						// NOTE(Sam): The controller is not available.
 					}
 				}
@@ -257,8 +306,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 				window_dimension Dimension = GetWindowDimension(Window);
 				BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width,
 								   Dimension.Height);
-				++XOffset;
-				--YOffset;
+				// ++XOffset;
+				// --YOffset;
 			}
 		}
 		else
