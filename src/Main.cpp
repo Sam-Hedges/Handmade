@@ -149,6 +149,23 @@ internal void BlitBufferToWindow(bitmap_buffer Buffer, HDC DeviceContext, int Cl
 				  Buffer.Memory, &Buffer.Info, DIB_RGB_COLORS, SRCCOPY);
 }
 
+// TODO(Sam): Remove once not needed.
+void PrintKeyState(bool WasDown, bool IsDown, const char *Key)
+{
+	OutputDebugStringA(Key);
+	OutputDebugStringA(": ");
+	if(IsDown)
+	{
+		OutputDebugStringA("IsDown ");
+	}
+	if(WasDown)
+	{
+		OutputDebugStringA("WasDown");
+	}
+	OutputDebugStringA("\n");
+	return;
+}
+
 LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 {
 	LRESULT Result = 0;
@@ -174,6 +191,64 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_ACTIVATEAPP:
 		{
 			OutputDebugStringA("WM_ACTIVATEAPP\n");
+		}
+		break;
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+		case WM_KEYDOWN:
+		case WM_KEYUP:
+		{
+			uint32 VKCode = (uint32)WParam;
+			bool WasDown  = ((LParam & (1 << 30)) != 0);
+			bool IsDown	  = ((LParam & (1 << 31)) == 0);
+
+			switch(VKCode)
+			{
+				case 'W':
+				case VK_UP:
+				{
+					PrintState(WasDown, IsDown, "W");
+				}
+				break;
+				case 'S':
+				case VK_DOWN:
+				{
+					PrintState(WasDown, IsDown, "S");
+				}
+				break;
+				case 'A':
+				case VK_LEFT:
+				{
+					PrintState(WasDown, IsDown, "A");
+				}
+				break;
+				case 'D':
+				case VK_RIGHT:
+				{
+					PrintState(WasDown, IsDown, "D");
+				}
+				break;
+				case 'Q':
+				{
+					PrintState(WasDown, IsDown, "Q");
+				}
+				break;
+				case 'E':
+				{
+					PrintState(WasDown, IsDown, "E");
+				}
+				break;
+				case VK_SPACE:
+				{
+					PrintState(WasDown, IsDown, "Space");
+				}
+				break;
+				case VK_ESCAPE:
+				{
+					PrintState(WasDown, IsDown, "Escape");
+				}
+				break;
+			}
 		}
 		break;
 		case WM_PAINT:
