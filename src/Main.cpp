@@ -82,13 +82,13 @@ internal window_dimension GetWindowDimension(HWND Window)
 	return Result;
 }
 
-internal void RenderGradientUV(bitmap_buffer Buffer, int XOffset, int YOffset)
+internal void RenderGradientUV(bitmap_buffer *Buffer, int XOffset, int YOffset)
 {
-	uint8 *Row = (uint8 *)Buffer.Memory;
-	for(int Y = 0; Y < Buffer.Height; ++Y)
+	uint8 *Row = (uint8 *)Buffer->Memory;
+	for(int Y = 0; Y < Buffer->Height; ++Y)
 	{
 		uint32 *Pixel = (uint32 *)Row;
-		for(int X = 0; X < Buffer.Width; ++X)
+		for(int X = 0; X < Buffer->Width; ++X)
 		{
 			// The reason we get a checkerbox is because by casting to an unsigned 8 bit integer /
 			// char we are capping the maximum value to 255. This means that the current row /
@@ -103,7 +103,7 @@ internal void RenderGradientUV(bitmap_buffer Buffer, int XOffset, int YOffset)
 			// interprets this byte as the alpha and make the bitmap view not display any pixels
 		}
 
-		Row += Buffer.Pitch;
+		Row += Buffer->Pitch;
 	}
 }
 
@@ -140,13 +140,13 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 	// TODO(Sam): Probably want to clear this to black.
 }
 
-internal void BlitBufferToWindow(bitmap_buffer Buffer, HDC DeviceContext, int ClientWidth,
+internal void BlitBufferToWindow(bitmap_buffer *Buffer, HDC DeviceContext, int ClientWidth,
 								 int ClientHeight)
 {
 	// TODO(Sam): Aspect Ratio Correction.
 	// TODO(Sam): Play with stretch modes.
-	StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight, 0, 0, Buffer.Width, Buffer.Height,
-				  Buffer.Memory, &Buffer.Info, DIB_RGB_COLORS, SRCCOPY);
+	StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight, 0, 0, Buffer->Width,
+				  Buffer->Height, Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
 }
 
 // TODO(Sam): Remove once not needed.
@@ -207,45 +207,45 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 				case 'W':
 				case VK_UP:
 				{
-					PrintState(WasDown, IsDown, "W");
+					PrintKeyState(WasDown, IsDown, "W");
 				}
 				break;
 				case 'S':
 				case VK_DOWN:
 				{
-					PrintState(WasDown, IsDown, "S");
+					PrintKeyState(WasDown, IsDown, "S");
 				}
 				break;
 				case 'A':
 				case VK_LEFT:
 				{
-					PrintState(WasDown, IsDown, "A");
+					PrintKeyState(WasDown, IsDown, "A");
 				}
 				break;
 				case 'D':
 				case VK_RIGHT:
 				{
-					PrintState(WasDown, IsDown, "D");
+					PrintKeyState(WasDown, IsDown, "D");
 				}
 				break;
 				case 'Q':
 				{
-					PrintState(WasDown, IsDown, "Q");
+					PrintKeyState(WasDown, IsDown, "Q");
 				}
 				break;
 				case 'E':
 				{
-					PrintState(WasDown, IsDown, "E");
+					PrintKeyState(WasDown, IsDown, "E");
 				}
 				break;
 				case VK_SPACE:
 				{
-					PrintState(WasDown, IsDown, "Space");
+					PrintKeyState(WasDown, IsDown, "Space");
 				}
 				break;
 				case VK_ESCAPE:
 				{
-					PrintState(WasDown, IsDown, "Escape");
+					PrintKeyState(WasDown, IsDown, "Escape");
 				}
 				break;
 			}
@@ -256,7 +256,7 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
 			PAINTSTRUCT Paint;
 			HDC DeviceContext		   = BeginPaint(Window, &Paint);
 			window_dimension Dimension = GetWindowDimension(Window);
-			BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height);
+			BlitBufferToWindow(&GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height);
 			EndPaint(Window, &Paint);
 		}
 		break;
@@ -277,7 +277,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 {
 	LoadXInput();
 
-	WNDCLASS WindowClass = {};
+	WNDCLASSA WindowClass = {};
 
 	ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
 
@@ -340,6 +340,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 						int16 StickLX = Gamepad->sThumbLX;
 						int16 StickLY = Gamepad->sThumbLY;
 
+						XOffset -= (StickLX >> 12) / 2;
+						YOffset += (StickLY >> 12) / 2;
+
 						if(DPadDown)
 						{
 							--YOffset;
@@ -376,10 +379,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 					}
 				}
 
-				RenderGradientUV(GlobalBackBuffer, XOffset, YOffset);
+				RenderGradientUV(&GlobalBackBuffer, XOffset, YOffset);
 
 				window_dimension Dimension = GetWindowDimension(Window);
-				BlitBufferToWindow(GlobalBackBuffer, DeviceContext, Dimension.Width,
+				BlitBufferToWindow(&GlobalBackBuffer, DeviceContext, Dimension.Width,
 								   Dimension.Height);
 				// ++XOffset;
 				// --YOffset;
