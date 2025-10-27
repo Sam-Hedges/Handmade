@@ -6,18 +6,38 @@ rem ============================================================================
 rem === SET UP PROJECT VARIABLES ===
 setlocal enabledelayedexpansion
 set "EXE_NAME=Game.exe"
+set "STATIC_LIBS=User32.lib Gdi32.lib"
 set "PROJECT_ROOT=%~dp0"
 set "BUILD_DIR=%PROJECT_ROOT%build"
 set "SRC_DIR=%PROJECT_ROOT%src"
 set "COMPILE_MODE=DEBUG"
 
-rem === CLEANING BUILD FOLDER ===
-if exist "%BUILD_DIR%" (
-    echo Cleaning build folder...
-    rmdir /s /q "%BUILD_DIR%"
+rem === SDL CONFIGURATION ===
+set "SDL_DIR=C:\Libraries\SDL3-devel-3.2.24-VC\SDL3-3.2.24"
+set "SDL_INCLUDE=%SDL_DIR%\include"
+set "SDL_LIB=%SDL_DIR%\lib\x64\SDL3.lib"
+set "SDL_DLL=%SDL_LIB%\SDL3.dll"
+
+rem === ENSURE BUILD FOLDER EXISTS (UPDATED) ===
+if not exist "%BUILD_DIR%" (
+    echo Creating build folder...
+    mkdir "%BUILD_DIR%"
+) else (
+    echo Cleaning build folder but keeping SDL3.dll...
+    pushd "%BUILD_DIR%"
+    for %%f in (*.*) do (
+        if /I not "%%f"=="SDL3.dll" (
+            del /Q "%%f"
+        )
+    )
+    popd
 )
-echo Making new build folder...
-mkdir "%BUILD_DIR%"
+
+rem === COPY SDL3.dll IF MISSING (NEW) ===
+if not exist "%BUILD_DIR%\SDL3.dll" (
+    echo Copying SDL3.dll into build folder...
+    copy /Y "%SDL_DLL%" "%BUILD_DIR%" > nul
+)
 
 rem === COMPILING SOURCES ===
 rem W4     Enables high warning verbosity [0–4] messages when compiling.
@@ -29,13 +49,14 @@ rem MDd    Use debug multithreaded DLL runtime, fill heap memory with patterns l
 rem RTC1   Enable basic runtime checks, helps detect stack corruption and use of uninitialized locals.
 rem GS     Enable buffer security checks, helps detect stack corruption and use of uninitialized locals.
 rem O2     Is shorthand for enabling a group of specific optimization flags. Look them up.
-pushd %BUILD_DIR%
+
+pushd "%BUILD_DIR%"
 if /I "%COMPILE_MODE%"=="DEBUG" (
     echo Compiling for DEBUG...
-    cl -W4 -Zi -FC -Od -EHsc -MDd -RTC1 -GS %SRC_DIR%\*.cpp -Fe%EXE_NAME% -link User32.lib Gdi32.lib
+    cl -W4 -Zi -FC -Od -EHsc -MDd -RTC1 -GS -I"%SDL_INCLUDE%" "%SRC_DIR%\*.cpp" -Fe%EXE_NAME% -link %SDL_LIB% %STATIC_LIBS%
 ) else if /I "%COMPILE_MODE%"=="RELEASE" (
     echo Compiling for RELEASE...
-    cl -O2 -EHsc %SRC_DIR%\*.cpp -Fe%EXE_NAME% -link User32.lib Gdi32.lib
+    cl -O2 -EHsc -I"%SDL_INCLUDE%" "%SRC_DIR%\*.cpp" -Fe%EXE_NAME% -link %SDL_LIB% %STATIC_LIBS%
 ) else (
     popd
     echo ERROR: Unknown COMPILE_MODE "%COMPILE_MODE%". Must be DEBUG or RELEASE.
@@ -50,7 +71,7 @@ echo Generating compile_commands.json...
     set first=1
     for /r "%SRC_DIR%" %%f in (*.cpp) do (
         set "FILE=%%f"
-        rem replace \ with / instead of \/ 
+        rem replace \ with / instead of \/
         set "FILE=!FILE:\=/!"
 
         set "PROJECT_PATH=%PROJECT_ROOT:~0,-1%"
@@ -60,7 +81,7 @@ echo Generating compile_commands.json...
         if "!first!"=="0" echo ,
         echo {
         echo     "directory": "!PROJECT_PATH!",
-        echo     "command": "cl /EHsc /std:c++17 -c !FILE!",
+        echo     "command": "cl -I!SDL_INCLUDE:\=/! -EHsc -std:c++17 -c !FILE!",
         echo     "file": "!FILE!"
         echo }
         set first=0

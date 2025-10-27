@@ -1,17 +1,15 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <windows.h>
-#include <xinput.h>
+#include "SDL3/SDL_events.h"
+#include <SDL3/SDL.h>
 
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
+typedef Uint8 uint8;
+typedef Uint16 uint16;
+typedef Uint32 uint32;
+typedef Uint64 uint64;
 
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
+typedef Sint8 int8;
+typedef Sint16 int16;
+typedef Sint32 int32;
+typedef Sint64 int64;
 
 #define internal static
 #define local_persist static
@@ -20,7 +18,6 @@ typedef int64_t int64;
 struct bitmap_buffer
 {
 	// NOTE(Sam): Pixels are always 32-bits wide, Memory Order BB GG RR xx
-	BITMAPINFO Info;
 	void *Memory;
 	int Width;
 	int Height;
@@ -36,51 +33,6 @@ struct window_dimension
 // TODO(Sam): This is a global for now.
 global_var bool GlobalRunning;
 global_var bitmap_buffer GlobalBackBuffer;
-
-#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
-#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
-
-typedef X_INPUT_GET_STATE(x_input_get_state);
-typedef X_INPUT_SET_STATE(x_input_set_state);
-
-X_INPUT_GET_STATE(XInputGetStateStub) { return 0; }
-X_INPUT_SET_STATE(XInputSetStateStub) { return 0; }
-
-global_var x_input_get_state *XInputGetState_ = XInputGetStateStub;
-global_var x_input_set_state *XInputSetState_ = XInputSetStateStub;
-
-#define XInputGetState XInputGetState_
-#define XInputSetState XInputSetState_
-
-internal void LoadXInput(void)
-{
-	HMODULE XInputLibrary = LoadLibraryA("xinput1_4.dll");
-	if(!XInputLibrary)
-	{
-		XInputLibrary = LoadLibraryA("xinput1_3.dll");
-	}
-	if(!XInputLibrary)
-	{
-		XInputLibrary = LoadLibraryA("xinput9_1_0.dll");
-	}
-	if(XInputLibrary)
-	{
-		XInputGetState = (x_input_get_state *)GetProcAddress(XInputLibrary, "XInputGetState");
-		XInputSetState = (x_input_set_state *)GetProcAddress(XInputLibrary, "XInputSetState");
-	}
-}
-
-internal window_dimension GetWindowDimension(HWND Window)
-{
-	window_dimension Result;
-
-	RECT ClientRect;
-	GetClientRect(Window, &ClientRect);
-	Result.Width  = ClientRect.right - ClientRect.left;
-	Result.Height = ClientRect.bottom - ClientRect.top;
-
-	return Result;
-}
 
 internal void RenderGradientUV(bitmap_buffer *Buffer, int XOffset, int YOffset)
 {
@@ -115,288 +67,114 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 
 	if(Buffer->Memory)
 	{
-		VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
+		SDL_free(Buffer->Memory);
 	}
 
 	Buffer->Width	  = Width;
 	Buffer->Height	  = Height;
 	int BytesPerPixel = 4;
 
-	// NOTE(Sam): When the biHeight field is negative, this is the clue to
-	// windows to treat this bitmap as top down and not bottom up, meaning that
-	// the first 3 bytes of the image are the top left pixel not the bottom left
-	Buffer->Info.bmiHeader.biSize		 = sizeof(Buffer->Info.bmiHeader);
-	Buffer->Info.bmiHeader.biWidth		 = Buffer->Width;
-	Buffer->Info.bmiHeader.biHeight		 = -Buffer->Height;
-	Buffer->Info.bmiHeader.biPlanes		 = 1;
-	Buffer->Info.bmiHeader.biBitCount	 = 32;
-	Buffer->Info.bmiHeader.biCompression = BI_RGB;
-
 	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
-	Buffer->Memory		 = VirtualAlloc(0, BitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+	Buffer->Memory		 = SDL_malloc(BitmapMemorySize);
 
 	Buffer->Pitch = Buffer->Width * BytesPerPixel;
 
 	// TODO(Sam): Probably want to clear this to black.
 }
 
-internal void BlitBufferToWindow(bitmap_buffer *Buffer, HDC DeviceContext, int ClientWidth,
-								 int ClientHeight)
+// TODO(Sam): From code pre SDL, consider creating a blit function that works with SDL
+// internal void BlitBufferToWindow(bitmap_buffer *Buffer, HDC DeviceContext, int ClientWidth,
+// 								 int ClientHeight)
+// {
+// 	// TODO(Sam): Aspect Ratio Correction.
+// 	// TODO(Sam): Play with stretch modes.
+// 	StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight, 0, 0, Buffer->Width,
+// 				  Buffer->Height, Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
+// }
+
+// NOTE(Sam): SDL has a macro that redefines this to a custom SDL_main
+int main(int Argc, char **Argv)
 {
-	// TODO(Sam): Aspect Ratio Correction.
-	// TODO(Sam): Play with stretch modes.
-	StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight, 0, 0, Buffer->Width,
-				  Buffer->Height, Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
-}
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 
-// TODO(Sam): Remove once not needed.
-void PrintKeyState(bool WasDown, bool IsDown, const char *Key)
-{
-	OutputDebugStringA(Key);
-	OutputDebugStringA(": ");
-	if(IsDown)
-	{
-		OutputDebugStringA("IsDown ");
-	}
-	if(WasDown)
-	{
-		OutputDebugStringA("WasDown");
-	}
-	OutputDebugStringA("\n");
-	return;
-}
+	SDL_Window *Window = SDL_CreateWindow("Handmade Game", 1920, 1080, SDL_WINDOW_RESIZABLE);
 
-LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
-{
-	LRESULT Result = 0;
-
-	switch(Message)
-	{
-		case WM_SIZE:
-		{
-		}
-		break;
-		case WM_DESTROY:
-		{
-			// TODO(Sam): Handle this as an error, recreate window?
-			GlobalRunning = false;
-		}
-		break;
-		case WM_CLOSE:
-		{
-			// TODO(Sam): Handle this with a message to the user?
-			GlobalRunning = false;
-		}
-		break;
-		case WM_ACTIVATEAPP:
-		{
-			OutputDebugStringA("WM_ACTIVATEAPP\n");
-		}
-		break;
-		case WM_SYSKEYDOWN:
-		case WM_SYSKEYUP:
-		case WM_KEYDOWN:
-		case WM_KEYUP:
-		{
-			uint32 VKCode = (uint32)WParam;
-			bool WasDown  = ((LParam & (1 << 30)) != 0);
-			bool IsDown	  = ((LParam & (1 << 31)) == 0);
-
-			switch(VKCode)
-			{
-				case 'W':
-				case VK_UP:
-				{
-					PrintKeyState(WasDown, IsDown, "W");
-				}
-				break;
-				case 'S':
-				case VK_DOWN:
-				{
-					PrintKeyState(WasDown, IsDown, "S");
-				}
-				break;
-				case 'A':
-				case VK_LEFT:
-				{
-					PrintKeyState(WasDown, IsDown, "A");
-				}
-				break;
-				case 'D':
-				case VK_RIGHT:
-				{
-					PrintKeyState(WasDown, IsDown, "D");
-				}
-				break;
-				case 'Q':
-				{
-					PrintKeyState(WasDown, IsDown, "Q");
-				}
-				break;
-				case 'E':
-				{
-					PrintKeyState(WasDown, IsDown, "E");
-				}
-				break;
-				case VK_SPACE:
-				{
-					PrintKeyState(WasDown, IsDown, "Space");
-				}
-				break;
-				case VK_ESCAPE:
-				{
-					PrintKeyState(WasDown, IsDown, "Escape");
-				}
-				break;
-			}
-		}
-		break;
-		case WM_PAINT:
-		{
-			PAINTSTRUCT Paint;
-			HDC DeviceContext		   = BeginPaint(Window, &Paint);
-			window_dimension Dimension = GetWindowDimension(Window);
-			BlitBufferToWindow(&GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height);
-			EndPaint(Window, &Paint);
-		}
-		break;
-		default:
-		{
-			// OutputDebugStringA("default\n");
-			Result = DefWindowProcA(Window, Message, WParam, LParam);
-		}
-		break;
-	}
-
-	return (Result);
-}
-
-// Entry point for a Windows desktop application.
-// The CALLBACK and WinMain signature are required by the Windows API for GUI apps.
-int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
-{
-	LoadXInput();
-
-	WNDCLASSA WindowClass = {};
+	SDL_Renderer *Renderer = SDL_CreateRenderer(Window, NULL);
 
 	ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
 
-	WindowClass.style		  = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-	WindowClass.lpfnWndProc	  = MainWindowCallback; // Handles messages
-	WindowClass.hInstance	  = Instance;
-	WindowClass.lpszClassName = "HandmadeGameWindowClass";
-	// WindowClass.icon		  = ;
+	SDL_Texture *Texture =
+		SDL_CreateTexture(Renderer, SDL_PIXELFORMAT_BGRA32, SDL_TEXTUREACCESS_STREAMING,
+						  GlobalBackBuffer.Width, GlobalBackBuffer.Height);
 
-	if(RegisterClassA(&WindowClass))
+	int XOffset = 0;
+	int YOffset = 0;
+
+	GlobalRunning = true;
+	while(GlobalRunning)
 	{
-		HWND Window = CreateWindowExA(
-			0, WindowClass.lpszClassName, "Handmade Game", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, Instance, 0);
-
-		if(Window)
+		SDL_Event Event;
+		while(SDL_PollEvent(&Event))
 		{
-			HDC DeviceContext = GetDC(Window);
-
-			int XOffset = 0, YOffset = 0;
-
-			GlobalRunning = true;
-			while(GlobalRunning)
+			switch(Event.type)
 			{
-				MSG Message;
-				while(PeekMessageA(&Message, 0, 0, 0, PM_REMOVE))
+				case SDL_EVENT_QUIT:
 				{
-					if(Message.message == WM_QUIT)
+					GlobalRunning = false;
+				}
+				break;
+				case SDL_EVENT_KEY_DOWN:
+				{
+					SDL_Scancode key = Event.key.scancode;
+					if(key == SDL_SCANCODE_ESCAPE)
 					{
 						GlobalRunning = false;
 					}
 
-					TranslateMessage(&Message);
-					DispatchMessageA(&Message);
+					SDL_Log("Key: %s DOWN", SDL_GetScancodeName(key));
 				}
-
-				// TODO(Sam): Should we poll this more frequently
-				for(DWORD ControllerIndex = 0; ControllerIndex < XUSER_MAX_COUNT; ControllerIndex++)
+				break;
+				case SDL_EVENT_KEY_UP:
 				{
-					XINPUT_STATE ControllerState;
-					if(XInputGetState(ControllerIndex, &ControllerState) == ERROR_SUCCESS)
-					{
-						// NOTE(Sam): This controller is plugged in.
-						// TODO(Sam): See if ControllerState.dwPacketNumber increments too rapidly
-						XINPUT_GAMEPAD *Gamepad = &ControllerState.Gamepad;
-
-						bool DPadUp		   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-						bool DPadDown	   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-						bool DPadLeft	   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-						bool DPadRight	   = (Gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-						bool Start		   = (Gamepad->wButtons & XINPUT_GAMEPAD_START);
-						bool Back		   = (Gamepad->wButtons & XINPUT_GAMEPAD_BACK);
-						bool ShoulderLeft  = (Gamepad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-						bool ShoulderRight = (Gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-						bool AButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_A);
-						bool BButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_B);
-						bool XButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_X);
-						bool YButton	   = (Gamepad->wButtons & XINPUT_GAMEPAD_Y);
-
-						int16 StickLX = Gamepad->sThumbLX;
-						int16 StickLY = Gamepad->sThumbLY;
-
-						XOffset -= (StickLX >> 12) / 2;
-						YOffset += (StickLY >> 12) / 2;
-
-						if(DPadDown)
-						{
-							--YOffset;
-						}
-						if(DPadUp)
-						{
-							++YOffset;
-						}
-						if(DPadLeft)
-						{
-							++XOffset;
-						}
-						if(DPadRight)
-						{
-							--XOffset;
-						}
-
-						XINPUT_VIBRATION Vibration;
-						Vibration.wLeftMotorSpeed  = 0;
-						Vibration.wRightMotorSpeed = 0;
-						if(ShoulderLeft)
-						{
-							Vibration.wLeftMotorSpeed = 60000;
-						}
-						if(ShoulderRight)
-						{
-							Vibration.wRightMotorSpeed = 60000;
-						}
-						XInputSetState(0, &Vibration);
-					}
-					else
-					{
-						// NOTE(Sam): The controller is not available.
-					}
+					SDL_Log("Key: %s UP", SDL_GetScancodeName(Event.key.scancode));
 				}
-
-				RenderGradientUV(&GlobalBackBuffer, XOffset, YOffset);
-
-				window_dimension Dimension = GetWindowDimension(Window);
-				BlitBufferToWindow(&GlobalBackBuffer, DeviceContext, Dimension.Width,
-								   Dimension.Height);
-				// ++XOffset;
-				// --YOffset;
+				break;
 			}
 		}
-		else
-		{
-			// TODO(Sam): Logging fail state
-		}
-	}
-	else
-	{
-		// TODO(Sam): Logging fail state
+
+		// -----------------------------
+		// GAME UPDATE
+		// -----------------------------
+		const bool *Keys = SDL_GetKeyboardState(NULL);
+		if(Keys[SDL_SCANCODE_UP])
+			YOffset++;
+		if(Keys[SDL_SCANCODE_DOWN])
+			YOffset--;
+		if(Keys[SDL_SCANCODE_LEFT])
+			XOffset++;
+		if(Keys[SDL_SCANCODE_RIGHT])
+			XOffset--;
+
+		RenderGradientUV(&GlobalBackBuffer, XOffset, YOffset);
+
+		SDL_UpdateTexture(Texture, NULL, GlobalBackBuffer.Memory, GlobalBackBuffer.Pitch);
+
+		// -----------------------------
+		// RENDER TO SCREEN
+		// -----------------------------
+		SDL_RenderClear(Renderer);
+
+		int Width, Height;
+		SDL_GetWindowSize(Window, &Width, &Height);
+		SDL_FRect Destination = {0, 0, (float)Width, (float)Height};
+		SDL_RenderTexture(Renderer, Texture, NULL, &Destination);
+
+		SDL_RenderPresent(Renderer);
 	}
 
+	SDL_DestroyTexture(Texture);
+	SDL_DestroyRenderer(Renderer);
+	SDL_DestroyWindow(Window);
+	SDL_Quit();
 	return 0;
 }
