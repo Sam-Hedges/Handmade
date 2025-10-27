@@ -16,14 +16,14 @@ rem === SDL CONFIGURATION ===
 set "SDL_DIR=C:\Libraries\SDL3-devel-3.2.24-VC\SDL3-3.2.24"
 set "SDL_INCLUDE=%SDL_DIR%\include"
 set "SDL_LIB=%SDL_DIR%\lib\x64\SDL3.lib"
-set "SDL_DLL=%SDL_LIB%\SDL3.dll"
+set "SDL_DLL=%SDL_DIR%\lib\x64\SDL3.dll"
 
 rem === ENSURE BUILD FOLDER EXISTS (UPDATED) ===
 if not exist "%BUILD_DIR%" (
-    echo Creating build folder...
+    echo Creating build directory...
     mkdir "%BUILD_DIR%"
 ) else (
-    echo Cleaning build folder but keeping SDL3.dll...
+    echo Cleaning build directory...
     pushd "%BUILD_DIR%"
     for %%f in (*.*) do (
         if /I not "%%f"=="SDL3.dll" (
@@ -35,7 +35,7 @@ if not exist "%BUILD_DIR%" (
 
 rem === COPY SDL3.dll IF MISSING (NEW) ===
 if not exist "%BUILD_DIR%\SDL3.dll" (
-    echo Copying SDL3.dll into build folder...
+    echo Copying SDL3.dll into build directory...
     copy /Y "%SDL_DLL%" "%BUILD_DIR%" > nul
 )
 
