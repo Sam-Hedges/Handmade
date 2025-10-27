@@ -1,5 +1,7 @@
-#include "SDL3/SDL_events.h"
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_render.h>
 
 typedef Uint8 uint8;
 typedef Uint16 uint16;
@@ -21,18 +23,18 @@ struct bitmap_buffer
 	void *Memory;
 	int Width;
 	int Height;
-	int Pitch; // How many bytes a pointer has to move in order to go from one row to the next row
-};
-
-struct window_dimension
-{
-	int Width;
-	int Height;
+	int Pitch;
+	// How many bytes a pointer has to move in
+	// order to go from one row to the next row
 };
 
 // TODO(Sam): This is a global for now.
 global_var bool GlobalRunning;
 global_var bitmap_buffer GlobalBackBuffer;
+
+global_var SDL_Window *Window;
+global_var SDL_Renderer *Renderer;
+global_var SDL_Gamepad *Gamepad;
 
 internal void RenderGradientUV(bitmap_buffer *Buffer, int XOffset, int YOffset)
 {
@@ -92,16 +94,16 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 // 				  Buffer->Height, Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
 // }
 
-// NOTE(Sam): SDL has a macro that redefines this to a custom SDL_main
+// TODO(Sam): Look into the SDL macro that redefines this to a custom SDL_main
 int main(int Argc, char **Argv)
 {
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 
-	SDL_Window *Window = SDL_CreateWindow("Handmade Game", 1920, 1080, SDL_WINDOW_RESIZABLE);
+	Window = SDL_CreateWindow("Handmade Game", 1280, 720, SDL_WINDOW_RESIZABLE);
 
-	SDL_Renderer *Renderer = SDL_CreateRenderer(Window, NULL);
+	Renderer = SDL_CreateRenderer(Window, NULL);
 
-	ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
+	ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
 
 	SDL_Texture *Texture =
 		SDL_CreateTexture(Renderer, SDL_PIXELFORMAT_BGRA32, SDL_TEXTUREACCESS_STREAMING,
@@ -139,6 +141,25 @@ int main(int Argc, char **Argv)
 					SDL_Log("Key: %s UP", SDL_GetScancodeName(Event.key.scancode));
 				}
 				break;
+				case SDL_EVENT_GAMEPAD_ADDED:
+				{
+					if(!Gamepad)
+					{
+						Gamepad = SDL_OpenGamepad(Event.gdevice.which);
+						// TODO(Sam): Look at gamepad polling example a check for error when loading
+						// gamepad
+					}
+				}
+				break;
+				case SDL_EVENT_GAMEPAD_REMOVED:
+				{
+					if(Gamepad && (SDL_GetGamepadID(Gamepad) == Event.gdevice.which))
+					{
+						SDL_CloseGamepad(Gamepad);
+						Gamepad = 0;
+					}
+				}
+				break;
 			}
 		}
 
@@ -154,6 +175,29 @@ int main(int Argc, char **Argv)
 			XOffset++;
 		if(Keys[SDL_SCANCODE_RIGHT])
 			XOffset--;
+
+		if(Gamepad)
+		{
+			int16 LeftAxisX = SDL_GetGamepadAxis(Gamepad, SDL_GAMEPAD_AXIS_LEFTX);
+			int16 LeftAxisY = SDL_GetGamepadAxis(Gamepad, SDL_GAMEPAD_AXIS_LEFTY);
+			XOffset += (-LeftAxisX >> 12) / 2;
+			YOffset += (-LeftAxisY >> 12) / 2;
+
+			bool LeftShoulder  = SDL_GetGamepadButton(Gamepad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+			bool RightShoulder = SDL_GetGamepadButton(Gamepad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+			if(LeftShoulder)
+			{
+				SDL_RumbleGamepad(Gamepad, 60000, 0, 100);
+			}
+			if(RightShoulder)
+			{
+				SDL_RumbleGamepad(Gamepad, 0, 60000, 100);
+			}
+			if(!LeftShoulder && !RightShoulder)
+			{
+				SDL_RumbleGamepad(Gamepad, 0, 0, 0);
+			}
+		}
 
 		RenderGradientUV(&GlobalBackBuffer, XOffset, YOffset);
 
