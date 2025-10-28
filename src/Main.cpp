@@ -1,6 +1,8 @@
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_main.h>
 #include <SDL3/SDL_render.h>
 
 typedef Uint8 uint8;
@@ -35,6 +37,7 @@ global_var bitmap_buffer GlobalBackBuffer;
 global_var SDL_Window *Window;
 global_var SDL_Renderer *Renderer;
 global_var SDL_Gamepad *Gamepad;
+global_var SDL_AudioStream *AudioStream;
 
 internal void RenderGradientUV(bitmap_buffer *Buffer, int XOffset, int YOffset)
 {
@@ -97,11 +100,18 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 // TODO(Sam): Look into the SDL macro that redefines this to a custom SDL_main
 int main(int Argc, char **Argv)
 {
-	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
 
 	Window = SDL_CreateWindow("Handmade Game", 1280, 720, SDL_WINDOW_RESIZABLE);
 
 	Renderer = SDL_CreateRenderer(Window, NULL);
+
+	SDL_AudioSpec AudioSpec;
+	AudioSpec.channels = 1;
+	AudioSpec.format   = SDL_AUDIO_F32;
+	AudioSpec.freq	   = 8000;
+	AudioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &AudioSpec, 0, 0);
+	SDL_ResumeAudioStreamDevice(AudioStream);
 
 	ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
 
@@ -197,6 +207,33 @@ int main(int Argc, char **Argv)
 			{
 				SDL_RumbleGamepad(Gamepad, 0, 0, 0);
 			}
+		}
+
+		// TODO(Sam): Make sure to review this code from SDL
+		// See if we need to feed the audio stream more data yet.
+		int MinAudio = (8000 * sizeof(float)) / 2;
+		local_persist int CurrentSineSample;
+		if(SDL_GetAudioStreamQueued(AudioStream) < MinAudio)
+		{
+			// This will feed 512 samples each frame until we get to our maximum.
+			local_persist float Samples[512];
+			int i;
+
+			// Generate a 440Hz pure tone
+			for(i = 0; i < SDL_arraysize(Samples); i++)
+			{
+				const int Freq	  = 440;
+				const float Phase = CurrentSineSample * Freq / 8000.0f;
+				Samples[i]		  = SDL_sinf(Phase * 2 * SDL_PI_F);
+				CurrentSineSample++;
+			}
+
+			// Wrapping around to avoid floating-point errors.
+			CurrentSineSample %= 8000;
+
+			// Feed the new data to the stream. It will queue at the end,
+			// and trickle out as the hardware needs more data.
+			SDL_PutAudioStreamData(AudioStream, Samples, sizeof(Samples));
 		}
 
 		RenderGradientUV(&GlobalBackBuffer, XOffset, YOffset);
