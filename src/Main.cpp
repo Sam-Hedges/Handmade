@@ -2,6 +2,7 @@
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_init.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_render.h>
 
@@ -101,6 +102,7 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 int main(int Argc, char **Argv)
 {
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
+	SDL_SetAppMetadata("Handmade Game", "1.0", "com.game.handmade");
 
 	Window = SDL_CreateWindow("Handmade Game", 1280, 720, SDL_WINDOW_RESIZABLE);
 
