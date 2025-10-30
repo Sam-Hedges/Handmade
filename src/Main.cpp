@@ -20,6 +20,8 @@ typedef Sint64 int64;
 #define local_persist static
 #define global_var static
 
+#define AUDIO_SAMPLE_RATE 48000
+
 struct bitmap_buffer
 {
 	// NOTE(Sam): Pixels are always 32-bits wide, Memory Order BB GG RR xx
@@ -29,6 +31,11 @@ struct bitmap_buffer
 	int Pitch;
 	// How many bytes a pointer has to move in
 	// order to go from one row to the next row
+};
+
+struct audio_buffer
+{
+	uint8 *Memory;
 };
 
 // TODO(Sam): This is a global for now.
@@ -65,8 +72,7 @@ internal void RenderGradientUV(bitmap_buffer *Buffer, int XOffset, int YOffset)
 	}
 }
 
-// Device Independent Bitmap
-internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
+internal void ResizeBitmap(bitmap_buffer *Buffer, int Width, int Height)
 {
 	// TODO(Sam): Bulletproof this.
 	// Maybe don't free first, free after, then free first if that fails.
@@ -98,6 +104,53 @@ internal void ResizeDIBSection(bitmap_buffer *Buffer, int Width, int Height)
 // 				  Buffer->Height, Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
 // }
 
+internal void ProcessSDLEvent(SDL_Event *Event)
+{
+	switch(Event->type)
+	{
+		case SDL_EVENT_QUIT:
+		{
+			GlobalRunning = false;
+		}
+		break;
+		case SDL_EVENT_KEY_DOWN:
+		{
+			SDL_Scancode key = Event->key.scancode;
+			if(key == SDL_SCANCODE_ESCAPE)
+			{
+				GlobalRunning = false;
+			}
+
+			SDL_Log("Key: %s DOWN", SDL_GetScancodeName(key));
+		}
+		break;
+		case SDL_EVENT_KEY_UP:
+		{
+			SDL_Log("Key: %s UP", SDL_GetScancodeName(Event->key.scancode));
+		}
+		break;
+		case SDL_EVENT_GAMEPAD_ADDED:
+		{
+			if(!Gamepad)
+			{
+				Gamepad = SDL_OpenGamepad(Event->gdevice.which);
+				// TODO(Sam): Look at gamepad polling example a check for error when loading
+				// gamepad
+			}
+		}
+		break;
+		case SDL_EVENT_GAMEPAD_REMOVED:
+		{
+			if(Gamepad && (SDL_GetGamepadID(Gamepad) == Event->gdevice.which))
+			{
+				SDL_CloseGamepad(Gamepad);
+				Gamepad = 0;
+			}
+		}
+		break;
+	}
+}
+
 // TODO(Sam): Look into the SDL macro that redefines this to a custom SDL_main
 int main(int Argc, char **Argv)
 {
@@ -111,11 +164,11 @@ int main(int Argc, char **Argv)
 	SDL_AudioSpec AudioSpec;
 	AudioSpec.channels = 1;
 	AudioSpec.format   = SDL_AUDIO_F32;
-	AudioSpec.freq	   = 8000;
+	AudioSpec.freq	   = AUDIO_SAMPLE_RATE;
 	AudioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &AudioSpec, 0, 0);
 	SDL_ResumeAudioStreamDevice(AudioStream);
 
-	ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
+	ResizeBitmap(&GlobalBackBuffer, 1280, 720);
 
 	SDL_Texture *Texture =
 		SDL_CreateTexture(Renderer, SDL_PIXELFORMAT_BGRA32, SDL_TEXTUREACCESS_STREAMING,
@@ -130,49 +183,7 @@ int main(int Argc, char **Argv)
 		SDL_Event Event;
 		while(SDL_PollEvent(&Event))
 		{
-			switch(Event.type)
-			{
-				case SDL_EVENT_QUIT:
-				{
-					GlobalRunning = false;
-				}
-				break;
-				case SDL_EVENT_KEY_DOWN:
-				{
-					SDL_Scancode key = Event.key.scancode;
-					if(key == SDL_SCANCODE_ESCAPE)
-					{
-						GlobalRunning = false;
-					}
-
-					SDL_Log("Key: %s DOWN", SDL_GetScancodeName(key));
-				}
-				break;
-				case SDL_EVENT_KEY_UP:
-				{
-					SDL_Log("Key: %s UP", SDL_GetScancodeName(Event.key.scancode));
-				}
-				break;
-				case SDL_EVENT_GAMEPAD_ADDED:
-				{
-					if(!Gamepad)
-					{
-						Gamepad = SDL_OpenGamepad(Event.gdevice.which);
-						// TODO(Sam): Look at gamepad polling example a check for error when loading
-						// gamepad
-					}
-				}
-				break;
-				case SDL_EVENT_GAMEPAD_REMOVED:
-				{
-					if(Gamepad && (SDL_GetGamepadID(Gamepad) == Event.gdevice.which))
-					{
-						SDL_CloseGamepad(Gamepad);
-						Gamepad = 0;
-					}
-				}
-				break;
-			}
+			ProcessSDLEvent(&Event);
 		}
 
 		// -----------------------------
