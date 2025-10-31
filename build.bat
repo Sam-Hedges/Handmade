@@ -9,6 +9,7 @@ set "EXE_NAME=Game.exe"
 set "STATIC_LIBS=User32.lib Gdi32.lib"
 set "PROJECT_ROOT=%~dp0"
 set "BUILD_DIR=%PROJECT_ROOT%build"
+set "INCLUDE_DIR=%PROJECT_ROOT%include"
 set "SRC_DIR=%PROJECT_ROOT%src"
 set "COMPILE_MODE=DEBUG"
 
@@ -53,10 +54,10 @@ rem O2     Is shorthand for enabling a group of specific optimization flags. Loo
 pushd "%BUILD_DIR%"
 if /I "%COMPILE_MODE%"=="DEBUG" (
     echo Compiling for DEBUG...
-    cl -W4 -Zi -FC -Od -EHsc -MDd -RTC1 -GS -I"%SDL_INCLUDE%" "%SRC_DIR%\*.cpp" -Fe%EXE_NAME% -link %SDL_LIB% %STATIC_LIBS%
+    cl -W4 -Zi -FC -Od -EHsc -MDd -RTC1 -GS -I%INCLUDE_DIR% -I%SDL_INCLUDE% "%SRC_DIR%\*.cpp" -Fe%EXE_NAME% -link %SDL_LIB% %STATIC_LIBS%
 ) else if /I "%COMPILE_MODE%"=="RELEASE" (
     echo Compiling for RELEASE...
-    cl -O2 -EHsc -I"%SDL_INCLUDE%" "%SRC_DIR%\*.cpp" -Fe%EXE_NAME% -link %SDL_LIB% %STATIC_LIBS%
+    cl -O2 -EHsc -I%INCLUDE_DIR% -I%SDL_INCLUDE% "%SRC_DIR%\*.cpp" -Fe%EXE_NAME% -link %SDL_LIB% %STATIC_LIBS%
 ) else (
     popd
     echo ERROR: Unknown COMPILE_MODE "%COMPILE_MODE%". Must be DEBUG or RELEASE.
@@ -68,24 +69,18 @@ rem === GENERATING compile_commands.json ===
 echo Generating compile_commands.json...
 (
     echo [
-    set first=1
-    for /r "%SRC_DIR%" %%f in (*.cpp) do (
-        set "FILE=%%f"
-        rem replace \ with / instead of \/
-        set "FILE=!FILE:\=/!"
+    set "FILE=%SRC_DIR%\main.cpp"
+    rem replace \ with / instead of \/
+    set "FILE=!FILE:\=/!"
 
-        set "PROJECT_PATH=%PROJECT_ROOT:~0,-1%"
-        set "PROJECT_PATH=!PROJECT_PATH:\=/!"
+    set "PROJECT_PATH=%PROJECT_ROOT:~0,-1%"
+    set "PROJECT_PATH=!PROJECT_PATH:\=/!"
 
-        rem Output the compile command for each source file
-        if "!first!"=="0" echo ,
-        echo {
-        echo     "directory": "!PROJECT_PATH!",
-        echo     "command": "cl -I!SDL_INCLUDE:\=/! -EHsc -std:c++17 -c !FILE!",
-        echo     "file": "!FILE!"
-        echo }
-        set first=0
-    )
+    echo {
+    echo     "directory": "!PROJECT_PATH!",
+    echo     "command": "cl -I!INCLUDE_DIR:\=/! -I!SDL_INCLUDE:\=/! -EHsc -std:c++17 -c !FILE!",
+    echo     "file": "!FILE!"
+    echo }
     echo ]
 ) > "%BUILD_DIR%\compile_commands.json"
 

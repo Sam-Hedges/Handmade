@@ -1,116 +1,37 @@
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_audio.h>
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_gamepad.h>
-#include <SDL3/SDL_init.h>
-#include <SDL3/SDL_main.h>
-#include <SDL3/SDL_render.h>
+#include <PlatformLayer.h>
 
-typedef Uint8 uint8;
-typedef Uint16 uint16;
-typedef Uint32 uint32;
-typedef Uint64 uint64;
+#include "Audio.cpp"
+#include "Rendering.cpp"
 
-typedef Sint8 int8;
-typedef Sint16 int16;
-typedef Sint32 int32;
-typedef Sint64 int64;
-
-#define internal static
-#define local_persist static
-#define global_var static
-
-#define AUDIO_SAMPLE_RATE 48000
-
-struct bitmap_buffer
-{
-	// NOTE(Sam): Pixels are always 32-bits wide, Memory Order BB GG RR xx
-	void *Memory;
-	int Width;
-	int Height;
-	int Pitch;
-	// How many bytes a pointer has to move in
-	// order to go from one row to the next row
-};
-
-struct audio_buffer
-{
-	uint8 *Memory;
-};
+/* ========================================================================
+   Variables
+   ======================================================================== */
 
 // TODO(Sam): This is a global for now.
-global_var bool GlobalRunning;
-global_var bitmap_buffer GlobalBackBuffer;
+// TODO(Sam): Figure out if I want to keep this "platform" prefix or if this is dumb
+global_var platform_program_state ProgramState = {};
+global_var platform_bitmap_buffer BackBuffer   = {};
+global_var platform_audio_buffer AudioBuffer   = {};
+global_var platform_audio_config AudioConfig   = {};
 
 global_var SDL_Window *Window;
 global_var SDL_Renderer *Renderer;
 global_var SDL_Gamepad *Gamepad;
 global_var SDL_AudioStream *AudioStream;
 
-internal void RenderGradientUV(bitmap_buffer *Buffer, int XOffset, int YOffset)
+/* ========================================================================
+   Application
+   ======================================================================== */
+
+internal void PlatformProcessSDLEvent(platform_program_state *ProgramState)
 {
-	uint8 *Row = (uint8 *)Buffer->Memory;
-	for(int Y = 0; Y < Buffer->Height; ++Y)
-	{
-		uint32 *Pixel = (uint32 *)Row;
-		for(int X = 0; X < Buffer->Width; ++X)
-		{
-			// The reason we get a checkerbox is because by casting to an unsigned 8 bit integer /
-			// char we are capping the maximum value to 255. This means that the current row /
-			// collumn in the bitmap's low order byte will be taken as the unsigned 8 bit integer
-			// and this is constantly wrapping as the width and height of the bitmap exceed 255.
-			uint8 Red	= (uint8)(X + XOffset);
-			uint8 Green = -(uint8)(Y + YOffset);
+	const SDL_Event *Event = &ProgramState->LastEvent;
 
-			// Pixel in Memory: BB GG RR xx
-			*Pixel++ = ((Green << 8) | (Red << 16) | (255 << 24));
-			// 255 magic number is to set the empty padding byte to the max value as raddebugger
-			// interprets this byte as the alpha and make the bitmap view not display any pixels
-		}
-
-		Row += Buffer->Pitch;
-	}
-}
-
-internal void ResizeBitmap(bitmap_buffer *Buffer, int Width, int Height)
-{
-	// TODO(Sam): Bulletproof this.
-	// Maybe don't free first, free after, then free first if that fails.
-
-	if(Buffer->Memory)
-	{
-		SDL_free(Buffer->Memory);
-	}
-
-	Buffer->Width	  = Width;
-	Buffer->Height	  = Height;
-	int BytesPerPixel = 4;
-
-	int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
-	Buffer->Memory		 = SDL_malloc(BitmapMemorySize);
-
-	Buffer->Pitch = Buffer->Width * BytesPerPixel;
-
-	// TODO(Sam): Probably want to clear this to black.
-}
-
-// TODO(Sam): From code pre SDL, consider creating a blit function that works with SDL
-// internal void BlitBufferToWindow(bitmap_buffer *Buffer, HDC DeviceContext, int ClientWidth,
-// 								 int ClientHeight)
-// {
-// 	// TODO(Sam): Aspect Ratio Correction.
-// 	// TODO(Sam): Play with stretch modes.
-// 	StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight, 0, 0, Buffer->Width,
-// 				  Buffer->Height, Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
-// }
-
-internal void ProcessSDLEvent(SDL_Event *Event)
-{
 	switch(Event->type)
 	{
 		case SDL_EVENT_QUIT:
 		{
-			GlobalRunning = false;
+			ProgramState->IsRunning = false;
 		}
 		break;
 		case SDL_EVENT_KEY_DOWN:
@@ -118,7 +39,7 @@ internal void ProcessSDLEvent(SDL_Event *Event)
 			SDL_Scancode key = Event->key.scancode;
 			if(key == SDL_SCANCODE_ESCAPE)
 			{
-				GlobalRunning = false;
+				ProgramState->IsRunning = false;
 			}
 
 			SDL_Log("Key: %s DOWN", SDL_GetScancodeName(key));
@@ -151,39 +72,52 @@ internal void ProcessSDLEvent(SDL_Event *Event)
 	}
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
 // TODO(Sam): Look into the SDL macro that redefines this to a custom SDL_main
 int main(int Argc, char **Argv)
 {
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
 	SDL_SetAppMetadata("Handmade Game", "1.0", "com.game.handmade");
 
-	Window = SDL_CreateWindow("Handmade Game", 1280, 720, SDL_WINDOW_RESIZABLE);
+	int Width  = 1280;
+	int Height = 720;
+	Window	   = SDL_CreateWindow("Handmade Game", Width, Height, SDL_WINDOW_RESIZABLE);
 
 	Renderer = SDL_CreateRenderer(Window, NULL);
 
-	SDL_AudioSpec AudioSpec;
-	AudioSpec.channels = 1;
-	AudioSpec.format   = SDL_AUDIO_F32;
-	AudioSpec.freq	   = AUDIO_SAMPLE_RATE;
-	AudioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &AudioSpec, 0, 0);
-	SDL_ResumeAudioStreamDevice(AudioStream);
-
-	ResizeBitmap(&GlobalBackBuffer, 1280, 720);
-
+	ResizeBitmap(&BackBuffer, Width, Height);
 	SDL_Texture *Texture =
 		SDL_CreateTexture(Renderer, SDL_PIXELFORMAT_BGRA32, SDL_TEXTUREACCESS_STREAMING,
-						  GlobalBackBuffer.Width, GlobalBackBuffer.Height);
+						  BackBuffer.Width, BackBuffer.Height);
+
+	// TODO(Sam): Figure out the application layout because where should these actually be defined
+	// probably not just randomly since I have an Init func to setup the buffer.
+	AudioConfig.SamplesPerSecond = 44100;
+	AudioConfig.BytesPerSample	 = 2 * sizeof(int16);
+	AudioConfig.SampleIndex		 = 0;
+	AudioConfig.ToneHz			 = 256;
+	AudioConfig.ToneVolume		 = 3000;
+	AudioConfig.WavePeriod		 = AudioConfig.SamplesPerSecond / AudioConfig.ToneHz;
+
+	InitAudioBuffer(&AudioBuffer, &AudioConfig);
+	PlatformInitializeAudio(&AudioBuffer);
+
+	platform_audio_thread_context AudioThreadContext = {};
+	AudioThreadContext.AudioBuffer					 = &AudioBuffer;
+	AudioThreadContext.ProgramState					 = &ProgramState;
+	SDL_Thread *AudioThread =
+		SDL_CreateThread(PlatformAudioThread, "Audio", (void *)&AudioThreadContext);
 
 	int XOffset = 0;
 	int YOffset = 0;
 
-	GlobalRunning = true;
-	while(GlobalRunning)
+	ProgramState.IsRunning = true;
+	while(ProgramState.IsRunning)
 	{
-		SDL_Event Event;
-		while(SDL_PollEvent(&Event))
+		while(SDL_PollEvent(&ProgramState.LastEvent))
 		{
-			ProcessSDLEvent(&Event);
+			PlatformProcessSDLEvent(&ProgramState);
 		}
 
 		// -----------------------------
@@ -222,50 +156,27 @@ int main(int Argc, char **Argv)
 			}
 		}
 
-		// TODO(Sam): Make sure to review this code from SDL
-		// See if we need to feed the audio stream more data yet.
-		int MinAudio = (8000 * sizeof(float)) / 2;
-		local_persist int CurrentSineSample;
-		if(SDL_GetAudioStreamQueued(AudioStream) < MinAudio)
-		{
-			// This will feed 512 samples each frame until we get to our maximum.
-			local_persist float Samples[512];
-			int i;
-
-			// Generate a 440Hz pure tone
-			for(i = 0; i < SDL_arraysize(Samples); i++)
-			{
-				const int Freq	  = 440;
-				const float Phase = CurrentSineSample * Freq / 8000.0f;
-				Samples[i]		  = SDL_sinf(Phase * 2 * SDL_PI_F);
-				CurrentSineSample++;
-			}
-
-			// Wrapping around to avoid floating-point errors.
-			CurrentSineSample %= 8000;
-
-			// Feed the new data to the stream. It will queue at the end,
-			// and trickle out as the hardware needs more data.
-			SDL_PutAudioStreamData(AudioStream, Samples, sizeof(Samples));
-		}
-
-		RenderGradientUV(&GlobalBackBuffer, XOffset, YOffset);
-
-		SDL_UpdateTexture(Texture, NULL, GlobalBackBuffer.Memory, GlobalBackBuffer.Pitch);
-
 		// -----------------------------
 		// RENDER TO SCREEN
 		// -----------------------------
 		SDL_RenderClear(Renderer);
 
-		int Width, Height;
 		SDL_GetWindowSize(Window, &Width, &Height);
+		ResizeBitmap(&BackBuffer, Width, Height);
+		RenderGradientUV(&BackBuffer, XOffset, YOffset);
+		SDL_UpdateTexture(Texture, NULL, BackBuffer.Memory, BackBuffer.Pitch);
+
 		SDL_FRect Destination = {0, 0, (float)Width, (float)Height};
 		SDL_RenderTexture(Renderer, Texture, NULL, &Destination);
 
 		SDL_RenderPresent(Renderer);
 	}
 
+	// TODO(Sam): Check if I need to free the audio buffer memory and the bitmap buffer memory
+
+	SDL_WaitThread(AudioThread, NULL);
+
+	SDL_CloseAudioDevice(AudioBuffer.DeviceID);
 	SDL_DestroyTexture(Texture);
 	SDL_DestroyRenderer(Renderer);
 	SDL_DestroyWindow(Window);
