@@ -83,7 +83,7 @@ internal Sint16 SampleSineWave(platform_audio_config *AudioConfig)
 ///////////////////////////////////////////////////////////////////////////////
 
 internal void SampleIntoAudioBuffer(platform_audio_buffer *AudioBuffer,
-									Sint16 (*GetSample)(platform_audio_config *))
+									int16 (*GetSample)(platform_audio_config *))
 {
 	int Region1Size = AudioBuffer->ReadCursor - AudioBuffer->WriteCursor;
 	int Region2Size = 0;
@@ -101,21 +101,21 @@ internal void SampleIntoAudioBuffer(platform_audio_buffer *AudioBuffer,
 	int Region2Samples = Region2Size / AudioConfig->BytesPerSample;
 	int BytesWritten   = Region1Size + Region2Size;
 
-	Sint16 *Buffer = (Sint16 *)&AudioBuffer->Buffer[AudioBuffer->WriteCursor];
+	int16 *Buffer = (int16 *)&AudioBuffer->Buffer[AudioBuffer->WriteCursor];
 	for(int SampleIndex = 0; SampleIndex < Region1Samples; SampleIndex++)
 	{
-		Sint16 SampleValue = (*GetSample)(AudioConfig);
-		*Buffer++		   = SampleValue;
-		*Buffer++		   = SampleValue;
+		int16 SampleValue = (*GetSample)(AudioConfig);
+		*Buffer++		  = SampleValue;
+		*Buffer++		  = SampleValue;
 		AudioConfig->SampleIndex++;
 	}
 
-	Buffer = (Sint16 *)AudioBuffer->Memory;
+	Buffer = (int16 *)AudioBuffer->Memory;
 	for(int SampleIndex = 0; SampleIndex < Region2Samples; SampleIndex++)
 	{
-		Sint16 SampleValue = (*GetSample)(AudioConfig);
-		*Buffer++		   = SampleValue;
-		*Buffer++		   = SampleValue;
+		int16 SampleValue = (*GetSample)(AudioConfig);
+		*Buffer++		  = SampleValue;
+		*Buffer++		  = SampleValue;
 		AudioConfig->SampleIndex++;
 	}
 
@@ -124,7 +124,7 @@ internal void SampleIntoAudioBuffer(platform_audio_buffer *AudioBuffer,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-internal void PlatformFillAudioDeviceBuffer(void *UserData, Uint8 *DeviceBuffer, int Length)
+internal void PlatformFillAudioDeviceBuffer(void *UserData, uint8 *DeviceBuffer, int Length)
 {
 	platform_audio_buffer *AudioBuffer = (platform_audio_buffer *)UserData;
 
@@ -141,6 +141,7 @@ internal void PlatformFillAudioDeviceBuffer(void *UserData, Uint8 *DeviceBuffer,
 		Region2Size = Length - Region1Size;
 	}
 
+	// TODO(Sam): Fix error, the original code the memory was a uint8 pointer but now it is void
 	SDL_memcpy(DeviceBuffer, (AudioBuffer->Memory + AudioBuffer->ReadCursor), Region1Size);
 	SDL_memcpy(&DeviceBuffer[Region1Size], AudioBuffer->Memory, Region2Size);
 
@@ -163,6 +164,7 @@ internal void PlatformInitializeAudio(platform_audio_buffer *AudioBuffer)
 	if(AudioSettings.format != ObtainedSettings.format)
 	{
 		SDL_Log("Unable to obtain expected audio settings: %s", SDL_GetError());
+		// TODO(Sam): Not sure if I like this exit() way of exiting the program
 		exit(1);
 	}
 
