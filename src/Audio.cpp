@@ -1,3 +1,4 @@
+#include "SDL3/SDL_audio.h"
 #include <PlatformLayer.h>
 
 /* ========================================================================
@@ -9,6 +10,10 @@ global_var uint32 SDL_AUDIO_TRANSPARENTLY_CONVERT_FORMAT = 0;
 /* ========================================================================
    Structures
    ======================================================================== */
+
+// TODO(Sam): Redo this entire audio buisness at the sdl audio api has changed from version 2 to 3
+// https://wiki.libsdl.org/SDL3/README-migration search this for audio stuff and also readup on the
+// sdl_audiostream callbacks as I'm not sure we even need a circular buffer any more
 
 struct platform_audio_config
 {
@@ -61,7 +66,7 @@ internal void InitAudioBuffer(platform_audio_buffer *Buffer, platform_audio_conf
 	Buffer->Memory = SDL_malloc(Buffer->Size);
 }
 
-internal Sint16 SampleSquareWave(platform_audio_config *AudioConfig)
+internal int16 SampleSquareWave(platform_audio_config *AudioConfig)
 {
 	int HalfSquareWaveCounter = AudioConfig->WavePeriod / 2;
 	if((AudioConfig->SampleIndex / HalfSquareWaveCounter) % 2 == 0)
@@ -74,7 +79,7 @@ internal Sint16 SampleSquareWave(platform_audio_config *AudioConfig)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-internal Sint16 SampleSineWave(platform_audio_config *AudioConfig)
+internal int16 SampleSineWave(platform_audio_config *AudioConfig)
 {
 	int HalfWaveCounter = AudioConfig->WavePeriod / 2;
 	return AudioConfig->ToneVolume * sin(TAU * AudioConfig->SampleIndex / HalfWaveCounter);
@@ -101,7 +106,8 @@ internal void SampleIntoAudioBuffer(platform_audio_buffer *AudioBuffer,
 	int Region2Samples = Region2Size / AudioConfig->BytesPerSample;
 	int BytesWritten   = Region1Size + Region2Size;
 
-	int16 *Buffer = (int16 *)&AudioBuffer->Buffer[AudioBuffer->WriteCursor];
+	// TODO(Sam): Fix error, the original code the memory was a uint8 pointer but now it is void
+	int16 *Buffer = (int16 *)&((uint8 *)AudioBuffer->Memory)[AudioBuffer->WriteCursor];
 	for(int SampleIndex = 0; SampleIndex < Region1Samples; SampleIndex++)
 	{
 		int16 SampleValue = (*GetSample)(AudioConfig);
@@ -141,8 +147,7 @@ internal void PlatformFillAudioDeviceBuffer(void *UserData, uint8 *DeviceBuffer,
 		Region2Size = Length - Region1Size;
 	}
 
-	// TODO(Sam): Fix error, the original code the memory was a uint8 pointer but now it is void
-	SDL_memcpy(DeviceBuffer, (AudioBuffer->Memory + AudioBuffer->ReadCursor), Region1Size);
+	SDL_memcpy(DeviceBuffer, ((uint8 *)AudioBuffer->Memory + AudioBuffer->ReadCursor), Region1Size);
 	SDL_memcpy(&DeviceBuffer[Region1Size], AudioBuffer->Memory, Region2Size);
 
 	AudioBuffer->ReadCursor = (AudioBuffer->ReadCursor + Length) % AudioBuffer->Size;
@@ -157,19 +162,24 @@ internal void PlatformInitializeAudio(platform_audio_buffer *AudioBuffer)
 	AudioSettings.format		= SDL_AUDIO_S16LE;
 	AudioSettings.channels		= 2;
 
-	SDL_AudioSpec ObtainedSettings = {};
-	AudioBuffer->DeviceID		   = SDL_OpenAudioDevice(NULL, 0, &AudioSettings, &ObtainedSettings,
-														 SDL_AUDIO_TRANSPARENTLY_CONVERT_FORMAT);
+	// SDL_AudioSpec ObtainedSettings = {};
+	// AudioBuffer->DeviceID		   = SDL_OpenAudioDevice(NULL, 0, &AudioSettings,
+	// &ObtainedSettings,
+	// SDL_AUDIO_TRANSPARENTLY_CONVERT_FORMAT);
 
-	if(AudioSettings.format != ObtainedSettings.format)
-	{
-		SDL_Log("Unable to obtain expected audio settings: %s", SDL_GetError());
-		// TODO(Sam): Not sure if I like this exit() way of exiting the program
-		exit(1);
-	}
+	AudioBuffer->DeviceID = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &AudioSettings);
+
+	SDL_AudioStream *AudioStream = SDL_CreateAudioStream(&AudioSettings, &AudioSettings);
+
+	// if(AudioSettings.format != ObtainedSettings.format)
+	// {
+	// 	SDL_Log("Unable to obtain expected audio settings: %s", SDL_GetError());
+	// 	// TODO(Sam): Not sure if I like this exit() way of exiting the program
+	// 	exit(1);
+	// }
 
 	// Start playing the audio buffer
-	SDL_PauseAudioDevice(AudioBuffer->DeviceID, 0);
+	SDL_ResumeAudioDevice(AudioBuffer->DeviceID);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -180,9 +190,15 @@ internal int PlatformAudioThread(void *UserData)
 
 	while(AudioThread->ProgramState->IsRunning)
 	{
-		SDL_LockAudioDevice(AudioThread->AudioBuffer->DeviceID);
-		SampleIntoAudioBuffer(AudioThread->AudioBuffer, &SampleSineWave);
-		SDL_UnlockAudioDevice(AudioThread->AudioBuffer->DeviceID);
+		// SDL_SLockAudioDevice(AudioThread->AudioBuffer->DeviceID);
+		SampleIntoAudioBuffer(AudioThread->AudioBuffer, &SampleSquareWave);
+		// SDL_UnlockAudioDevice(AudioThread->AudioBuffer->DeviceID);
+
+		// SDL_LockAudioDevice() and SDL_UnlockAudioDevice() have been removed, since there is no
+		// callback in another thread to protect. SDL's audio subsystem and SDL_AudioStream maintain
+		// their own locks internally, so audio streams are safe to use from any thread. If the app
+		// assigns a callback to a specific stream, it can use the stream's lock through
+		// SDL_LockAudioStream() if necessary.
 	}
 
 	return 0;

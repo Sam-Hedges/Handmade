@@ -1,4 +1,5 @@
 #include <PlatformLayer.h>
+#include <SDL3/SDL_main.h>
 
 #include "Audio.cpp"
 #include "Rendering.cpp"
