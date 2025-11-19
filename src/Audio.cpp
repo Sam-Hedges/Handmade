@@ -39,6 +39,7 @@ struct platform_audio_thread_context
 {
 	platform_audio_buffer *AudioBuffer;
 	platform_program_state *ProgramState;
+	SDL_AudioStream *AudioStream;
 };
 
 /* ========================================================================
@@ -170,6 +171,7 @@ internal void PlatformInitializeAudio(platform_audio_buffer *AudioBuffer)
 	AudioBuffer->DeviceID = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &AudioSettings);
 
 	SDL_AudioStream *AudioStream = SDL_CreateAudioStream(&AudioSettings, &AudioSettings);
+	SDL_PutAudioStreamData();
 
 	// if(AudioSettings.format != ObtainedSettings.format)
 	// {
